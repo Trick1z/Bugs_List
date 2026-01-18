@@ -1,0 +1,43 @@
+myproject/
+├── .env                          # Environment variables
+├── .gitignore                    # Git ignore rules
+├── go.mod                        # Go modules
+├── go.sum
+├── Makefile                      # Build commands
+│
+├── cmd/
+│   └── api/
+│       └── main.go              # 🚀 Application entry point
+│
+├── config/
+│   └── config.go                # ⚙️ Configuration management
+│
+├── internal/
+│   ├── database/
+│   │   └── database.go          # 💾 Database connection
+│   │
+│   ├── models/
+│   │   └── query/               # 📦 Generated models (auto)
+│   │       ├── gen.go
+│   │       ├── users.gen.go
+│   │       └── ...
+│   │
+│   ├── handlers/                # 🎯 HTTP handlers
+│   │   └── user_handler.go
+│   │
+│   ├── services/                # 💼 Business logic
+│   │   └── user_service.go
+│   │
+│   └── middleware/              # 🔐 Middleware
+│       └── auth.go
+│
+├── pkg/
+│   └── utils/                   # 🛠️ Shared utilities
+│       └── helpers.go
+│
+└── scripts/
+    └── generate.go              # 🔄 Model generator script
+
+
+
+    https://claude.ai/chat/5f0ef670-4ef5-4e30-b45f-8c95e8d6708e

@@ -1,0 +1,28 @@
+.PHONY: help generate run build clean
+
+help: ## แสดง help
+	@echo "Available commands:"
+	@echo "  make generate  - Generate GORM models"
+	@echo "  make run       - Run application"
+	@echo "  make build     - Build application"
+	@echo "  make clean     - Clean build files"
+
+generate: ## Generate GORM models จาก database
+	@echo "🔄 Generating models..."
+	@go run scripts/generate.go
+
+run: ## Run application
+	@echo "🚀 Starting application..."
+	@go run cmd/api/main.go
+
+build: ## Build application
+	@echo "🔨 Building..."
+	@go build -o bin/api cmd/api/main.go
+
+clean: ## Clean build files
+	@echo "🧹 Cleaning..."
+	@rm -rf bin/
+
+
+
+

@@ -1,0 +1,610 @@
+import React, { useState } from 'react';
+import { Copy, Check, Database, Code, FileCode, Terminal, FolderPlus, Layers } from 'lucide-react';
+
+export default function GORMGenGuide() {
+  const [copiedIndex, setCopiedIndex] = useState(null);
+
+  const copyToClipboard = (text, index) => {
+    navigator.clipboard.writeText(text);
+    setCopiedIndex(index);
+    setTimeout(() => setCopiedIndex(null), 2000);
+  };
+
+  const codeBlocks = [
+    {
+      title: "Step 1: สร้าง Project Structure",
+      icon: <FolderPlus className="w-5 h-5" />,
+      description: "สร้าง folder structure แบบมาตรฐาน",
+      code: `# สร้าง project directory
+mkdir myproject
+cd myproject
+
+# Initialize Go module
+go mod init myproject
+
+# สร้าง folder structure
+mkdir -p cmd/api
+mkdir -p internal/database
+mkdir -p internal/models
+mkdir -p internal/handlers
+mkdir -p internal/services
+mkdir -p internal/middleware
+mkdir -p pkg/utils
+mkdir -p config
+mkdir -p scripts`,
+      language: "bash"
+    },
+    {
+      title: "Step 2: ติดตั้ง Dependencies",
+      icon: <Terminal className="w-5 h-5" />,
+      description: "ติดตั้ง packages ที่จำเป็น",
+      code: `go get -u gorm.io/gorm
+go get -u gorm.io/driver/postgres
+go get -u gorm.io/gen
+go get -u github.com/joho/godotenv
+go get -u github.com/gin-gonic/gin`,
+      language: "bash"
+    },
+    {
+      title: "Step 3: สร้างไฟล์ .env",
+      icon: <FileCode className="w-5 h-5" />,
+      description: "Config สำหรับ database และ app",
+      code: `# Database Configuration
+DB_HOST=localhost
+DB_USER=postgres
+DB_PASSWORD=yourpassword
+DB_NAME=yourdatabase
+DB_PORT=5432
+DB_SSLMODE=disable
+
+# Application Configuration
+APP_PORT=8080
+APP_ENV=development`,
+      language: "env",
+      filename: ".env"
+    },
+    {
+      title: "Step 4: config/config.go",
+      icon: <Code className="w-5 h-5" />,
+      description: "จัดการ configuration แบบ centralized",
+      code: `package config
+
+import (
+	"log"
+	"os"
+
+	"github.com/joho/godotenv"
+)
+
+type Config struct {
+	Database DatabaseConfig
+	App      AppConfig
+}
+
+type DatabaseConfig struct {
+	Host     string
+	User     string
+	Password string
+	DBName   string
+	Port     string
+	SSLMode  string
+}
+
+type AppConfig struct {
+	Port string
+	Env  string
+}
+
+func Load() *Config {
+	// โหลด .env file
+	if err := godotenv.Load(); err != nil {
+		log.Println("⚠️ .env file not found, using environment variables")
+	}
+
+	return &Config{
+		Database: DatabaseConfig{
+			Host:     getEnv("DB_HOST", "localhost"),
+			User:     getEnv("DB_USER", "postgres"),
+			Password: getEnv("DB_PASSWORD", ""),
+			DBName:   getEnv("DB_NAME", "mydb"),
+			Port:     getEnv("DB_PORT", "5432"),
+			SSLMode:  getEnv("DB_SSLMODE", "disable"),
+		},
+		App: AppConfig{
+			Port: getEnv("APP_PORT", "8080"),
+			Env:  getEnv("APP_ENV", "development"),
+		},
+	}
+}
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}`,
+      language: "go",
+      filename: "config/config.go"
+    },
+    {
+      title: "Step 5: internal/database/database.go",
+      icon: <Database className="w-5 h-5" />,
+      description: "Database connection handler",
+      code: `package database
+
+import (
+	"fmt"
+	"log"
+	"myproject/config"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+var DB *gorm.DB
+
+func Connect(cfg *config.Config) error {
+	dsn := fmt.Sprintf(
+		"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s",
+		cfg.Database.Host,
+		cfg.Database.User,
+		cfg.Database.Password,
+		cfg.Database.DBName,
+		cfg.Database.Port,
+		cfg.Database.SSLMode,
+	)
+
+	var err error
+	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Info),
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to connect database: %w", err)
+	}
+
+	log.Println("✅ Connected to PostgreSQL successfully!")
+	return nil
+}
+
+func GetDB() *gorm.DB {
+	return DB
+}`,
+      language: "go",
+      filename: "internal/database/database.go"
+    },
+    {
+      title: "Step 6: scripts/generate.go",
+      icon: <Code className="w-5 h-5" />,
+      description: "Script สำหรับ generate models (แยกออกจาก main app)",
+      code: `package main
+
+import (
+	"log"
+	"myproject/config"
+	"myproject/internal/database"
+
+	"gorm.io/gen"
+)
+
+func main() {
+	// โหลด config
+	cfg := config.Load()
+
+	// เชื่อมต่อ database
+	if err := database.Connect(cfg); err != nil {
+		log.Fatal("❌ Database connection failed:", err)
+	}
+
+	db := database.GetDB()
+
+	// Configure generator
+	g := gen.NewGenerator(gen.Config{
+		OutPath:       "./internal/models/query",
+		Mode:          gen.WithoutContext | gen.WithDefaultQuery | gen.WithQueryInterface,
+		FieldNullable: true,
+		FieldCoverable: false,
+	})
+
+	g.UseDB(db)
+
+	// Generate models จาก ALL tables
+	g.ApplyBasic(g.GenerateAllTable()...)
+
+	// หรือ generate เฉพาะบาง tables
+	// g.ApplyBasic(
+	//     g.GenerateModel("users"),
+	//     g.GenerateModel("products"),
+	//     g.GenerateModel("orders"),
+	// )
+
+	// Execute generation
+	g.Execute()
+
+	log.Println("🎉 Models generated successfully in ./internal/models/query/")
+}`,
+      language: "go",
+      filename: "scripts/generate.go"
+    },
+    {
+      title: "Step 7: internal/services/user_service.go",
+      icon: <Layers className="w-5 h-5" />,
+      description: "Business logic layer (ตัวอย่าง)",
+      code: `package services
+
+import (
+	"myproject/internal/models/query"
+)
+
+type UserService struct {
+	query *query.Query
+}
+
+func NewUserService(q *query.Query) *UserService {
+	return &UserService{query: q}
+}
+
+// ตัวอย่าง: Get all users
+func (s *UserService) GetAllUsers() (interface{}, error) {
+	users, err := s.query.User.Find()
+	if err != nil {
+		return nil, err
+	}
+	return users, nil
+}
+
+// ตัวอย่าง: Get user by ID
+func (s *UserService) GetUserByID(id int) (interface{}, error) {
+	user, err := s.query.User.Where(s.query.User.ID.Eq(int32(id))).First()
+	if err != nil {
+		return nil, err
+	}
+	return user, nil
+}
+
+// เพิ่ม methods อื่นๆ ตามต้องการ...`,
+      language: "go",
+      filename: "internal/services/user_service.go"
+    },
+    {
+      title: "Step 8: internal/handlers/user_handler.go",
+      icon: <Code className="w-5 h-5" />,
+      description: "HTTP handlers (ตัวอย่าง)",
+      code: `package handlers
+
+import (
+	"myproject/internal/services"
+	"net/http"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+)
+
+type UserHandler struct {
+	userService *services.UserService
+}
+
+func NewUserHandler(us *services.UserService) *UserHandler {
+	return &UserHandler{userService: us}
+}
+
+// GET /users
+func (h *UserHandler) GetUsers(c *gin.Context) {
+	users, err := h.userService.GetAllUsers()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, users)
+}
+
+// GET /users/:id
+func (h *UserHandler) GetUser(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
+		return
+	}
+
+	user, err := h.userService.GetUserByID(id)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, user)
+}`,
+      language: "go",
+      filename: "internal/handlers/user_handler.go"
+    },
+    {
+      title: "Step 9: cmd/api/main.go",
+      icon: <Terminal className="w-5 h-5" />,
+      description: "Main application entry point",
+      code: `package main
+
+import (
+	"log"
+	"myproject/config"
+	"myproject/internal/database"
+	"myproject/internal/handlers"
+	"myproject/internal/models/query"
+	"myproject/internal/services"
+
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	// โหลด configuration
+	cfg := config.Load()
+
+	// เชื่อมต่อ database
+	if err := database.Connect(cfg); err != nil {
+		log.Fatal("❌ Failed to connect database:", err)
+	}
+
+	// Initialize query
+	query.SetDefault(database.GetDB())
+	q := query.Use(database.GetDB())
+
+	// Initialize services
+	userService := services.NewUserService(q)
+
+	// Initialize handlers
+	userHandler := handlers.NewUserHandler(userService)
+
+	// Setup router
+	r := gin.Default()
+
+	// Routes
+	api := r.Group("/api/v1")
+	{
+		api.GET("/users", userHandler.GetUsers)
+		api.GET("/users/:id", userHandler.GetUser)
+		// เพิ่ม routes อื่นๆ...
+	}
+
+	// Start server
+	log.Printf("🚀 Server starting on port %s", cfg.App.Port)
+	if err := r.Run(":" + cfg.App.Port); err != nil {
+		log.Fatal("❌ Failed to start server:", err)
+	}
+}`,
+      language: "go",
+      filename: "cmd/api/main.go"
+    },
+    {
+      title: "Step 10: สร้าง Makefile",
+      icon: <FileCode className="w-5 h-5" />,
+      description: "Commands สำหรับ development",
+      code: `.PHONY: help generate run build clean
+
+help: ## แสดง help
+	@echo "Available commands:"
+	@echo "  make generate  - Generate GORM models"
+	@echo "  make run       - Run application"
+	@echo "  make build     - Build application"
+	@echo "  make clean     - Clean build files"
+
+generate: ## Generate GORM models จาก database
+	@echo "🔄 Generating models..."
+	@go run scripts/generate.go
+
+run: ## Run application
+	@echo "🚀 Starting application..."
+	@go run cmd/api/main.go
+
+build: ## Build application
+	@echo "🔨 Building..."
+	@go build -o bin/api cmd/api/main.go
+
+clean: ## Clean build files
+	@echo "🧹 Cleaning..."
+	@rm -rf bin/`,
+      language: "makefile",
+      filename: "Makefile"
+    },
+    {
+      title: "Step 11: สร้าง .gitignore",
+      icon: <FileCode className="w-5 h-5" />,
+      description: "ไฟล์ที่ไม่ควร commit",
+      code: `# Environment variables
+.env
+.env.local
+
+# Build output
+bin/
+dist/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db`,
+      language: "gitignore",
+      filename: ".gitignore"
+    }
+  ];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+      <div className="max-w-5xl mx-auto">
+        {/* Header */}
+        <div className="bg-white rounded-xl shadow-lg p-8 mb-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Layers className="w-10 h-10 text-indigo-600" />
+            <h1 className="text-3xl font-bold text-gray-800">Go Project Structure แบบมาตรฐาน</h1>
+          </div>
+          <p className="text-gray-600">
+            Clean Architecture พร้อม GORM Gen - จัด structure ดีๆ แบบมืออาชีพ
+          </p>
+        </div>
+
+        {/* Project Structure */}
+        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+          <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
+            <FolderPlus className="w-5 h-5 text-indigo-600" />
+            โครงสร้าง Project ที่จะได้
+          </h3>
+          <pre className="bg-gray-900 text-gray-100 p-4 rounded-lg text-sm overflow-x-auto">
+{`myproject/
+├── .env                          # Environment variables
+├── .gitignore                    # Git ignore rules
+├── go.mod                        # Go modules
+├── go.sum
+├── Makefile                      # Build commands
+│
+├── cmd/
+│   └── api/
+│       └── main.go              # 🚀 Application entry point
+│
+├── config/
+│   └── config.go                # ⚙️ Configuration management
+│
+├── internal/
+│   ├── database/
+│   │   └── database.go          # 💾 Database connection
+│   │
+│   ├── models/
+│   │   └── query/               # 📦 Generated models (auto)
+│   │       ├── gen.go
+│   │       ├── users.gen.go
+│   │       └── ...
+│   │
+│   ├── handlers/                # 🎯 HTTP handlers
+│   │   └── user_handler.go
+│   │
+│   ├── services/                # 💼 Business logic
+│   │   └── user_service.go
+│   │
+│   └── middleware/              # 🔐 Middleware
+│       └── auth.go
+│
+├── pkg/
+│   └── utils/                   # 🛠️ Shared utilities
+│       └── helpers.go
+│
+└── scripts/
+    └── generate.go              # 🔄 Model generator script`}
+          </pre>
+          
+          <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+            <p className="text-sm text-blue-900">
+              <strong>📚 Architecture Pattern:</strong> Clean Architecture + Layered Architecture
+            </p>
+            <ul className="text-sm text-blue-800 mt-2 space-y-1">
+              <li>• <strong>cmd/</strong> - Entry points แยกตาม service</li>
+              <li>• <strong>internal/</strong> - Private code ของ project</li>
+              <li>• <strong>pkg/</strong> - Public code ที่ share ได้</li>
+              <li>• <strong>config/</strong> - Configuration centralized</li>
+              <li>• <strong>scripts/</strong> - Automation scripts</li>
+            </ul>
+          </div>
+        </div>
+
+        {/* Steps */}
+        <div className="space-y-4">
+          {codeBlocks.map((block, index) => (
+            <div key={index} className="bg-white rounded-xl shadow-lg overflow-hidden">
+              <div className="bg-gradient-to-r from-indigo-600 to-blue-600 p-4 text-white">
+                <div className="flex items-center gap-3">
+                  {block.icon}
+                  <div className="flex-1">
+                    <h2 className="text-xl font-semibold">{block.title}</h2>
+                    <p className="text-indigo-100 text-sm">{block.description}</p>
+                  </div>
+                  {block.filename && (
+                    <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-mono">
+                      {block.filename}
+                    </span>
+                  )}
+                </div>
+              </div>
+              
+              <div className="relative">
+                <button
+                  onClick={() => copyToClipboard(block.code, index)}
+                  className="absolute top-4 right-4 bg-gray-700 hover:bg-gray-600 text-white px-3 py-2 rounded-lg flex items-center gap-2 transition-colors z-10"
+                >
+                  {copiedIndex === index ? (
+                    <>
+                      <Check className="w-4 h-4" />
+                      <span className="text-sm">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-4 h-4" />
+                      <span className="text-sm">Copy</span>
+                    </>
+                  )}
+                </button>
+                
+                <pre className="bg-gray-900 text-gray-100 p-6 overflow-x-auto">
+                  <code className="text-sm">{block.code}</code>
+                </pre>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Quick Start */}
+        <div className="bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 rounded-lg p-6 mt-6">
+          <h3 className="font-semibold text-green-900 mb-3">🚀 Quick Start:</h3>
+          <div className="space-y-2 text-sm">
+            <div className="bg-white rounded p-3 font-mono text-green-800">
+              <span className="text-gray-500"># 1. Generate models</span><br/>
+              make generate
+            </div>
+            <div className="bg-white rounded p-3 font-mono text-green-800">
+              <span className="text-gray-500"># 2. Run application</span><br/>
+              make run
+            </div>
+            <div className="bg-white rounded p-3 font-mono text-green-800">
+              <span className="text-gray-500"># 3. Test API</span><br/>
+              curl http://localhost:8080/api/v1/users
+            </div>
+          </div>
+        </div>
+
+        {/* Best Practices */}
+        <div className="bg-amber-50 border-l-4 border-amber-500 rounded-lg p-6 mt-4">
+          <h3 className="font-semibold text-amber-900 mb-3">💡 Best Practices:</h3>
+          <ul className="text-amber-800 space-y-2 text-sm">
+            <li>• <strong>Separation of Concerns:</strong> แยก layer ชัดเจน (Handler → Service → Repository)</li>
+            <li>• <strong>Dependency Injection:</strong> ส่ง dependencies ผ่าน constructor</li>
+            <li>• <strong>Error Handling:</strong> Return error แทนการ panic</li>
+            <li>• <strong>Configuration:</strong> ใช้ environment variables แทน hardcode</li>
+            <li>• <strong>Database:</strong> Generate models ใหม่ทุกครั้งที่เปลี่ยน schema</li>
+            <li>• <strong>Version Control:</strong> Commit generated models แต่ไม่ commit .env</li>
+          </ul>
+        </div>
+
+        {/* Next Steps */}
+        <div className="bg-blue-50 border-l-4 border-blue-500 rounded-lg p-6 mt-4">
+          <h3 className="font-semibold text-blue-900 mb-3">📝 Next Steps:</h3>
+          <ul className="text-blue-800 space-y-1 text-sm">
+            <li>• เพิ่ม middleware สำหรับ authentication, logging, CORS</li>
+            <li>• เพิ่ม validation ด้วย go-playground/validator</li>
+            <li>• เพิ่ม unit tests ใน services และ handlers</li>
+            <li>• Setup Docker และ docker-compose</li>
+            <li>• เพิ่ม API documentation ด้วย Swagger</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
